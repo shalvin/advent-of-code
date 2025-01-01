@@ -89,8 +89,60 @@ pub fn part_one(input: &str) -> Option<u32> {
     Some(sum)
 }
 
-pub fn part_two(input: &str) -> Option<u64> {
-    None
+pub fn part_two(input: &str) -> Option<u32> {
+    let (dependency_defs, update_defs) = parse_p1(input);
+
+    let dependency_graph: StableDiGraph<u32, ()> = StableDiGraph::from_edges(dependency_defs);
+
+    let mut sum = 0;
+    for update in update_defs.into_iter() {
+        let mut is_okay = true;
+
+        let subgraph = dependency_graph.filter_map(
+            |i, n| {
+                if update.contains(&(i.index() as u32)) {
+                    Some(*n)
+                } else {
+                    None
+                }
+            },
+            |_, e| Some(*e),
+        );
+
+        for (i, page) in update.iter().skip(1).enumerate() {
+            let previous_pages: Vec<_> = update[0..=i].iter().copied().collect();
+
+            let node = node_index(*page as usize);
+            let dfs = Dfs::new(&subgraph, node);
+            let dependent_page = dfs
+                .iter(&subgraph)
+                .find(|n| previous_pages.contains(&(n.index() as u32)));
+
+            if dependent_page.is_some() {
+                is_okay = false;
+                break;
+            }
+        }
+
+        if !is_okay {
+            let mut sorted_update = update.clone();
+            sorted_update.sort_by(|a, b| {
+                use std::cmp::Ordering::*;
+
+                let node = node_index(*a as usize);
+                let dfs = Dfs::new(&subgraph, node);
+                if dfs.iter(&subgraph).any(|n| n == node_index(*b as usize)) {
+                    Greater
+                } else {
+                    Less
+                }
+            });
+
+            sum += sorted_update[(sorted_update.len() / 2) as usize];
+        }
+    }
+
+    Some(sum)
 }
 
 #[cfg(test)]
@@ -106,6 +158,6 @@ mod tests {
     #[test]
     fn test_part_two() {
         let result = part_two(&advent_of_code::template::read_file("examples", DAY));
-        assert_eq!(result, None);
+        assert_eq!(result, Some(123));
     }
 }
