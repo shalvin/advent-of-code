@@ -20,6 +20,7 @@ today = ["chrono"]
 test_lib = []
 
 [dependencies]
+bevy_math = "0.15.0"
 
 # Template dependencies
 chrono = { version = "0.4.38", optional = true }
