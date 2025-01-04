@@ -1,3 +1,5 @@
+use std::{collections::HashSet, usize};
+
 advent_of_code::solution!(9);
 
 #[derive(Clone, Debug)]
@@ -165,8 +167,276 @@ pub fn part_one(input: &str) -> Option<u64> {
     Some(checksum as u64)
 }
 
+#[derive(Copy, Clone, Debug)]
+enum Block {
+    File { id: usize, size: usize },
+    Empty { space: usize },
+}
+
 pub fn part_two(input: &str) -> Option<u64> {
-    None
+    use Block::*;
+
+    let chars = input.chars().collect::<Vec<char>>();
+
+    let mut disk = Vec::new();
+
+    chars.chunks(2).enumerate().for_each(|(id, chunk)| {
+        let mut chunk_parts = chunk
+            .into_iter()
+            .filter(|c| c.is_numeric())
+            .map(|c| c.to_string().parse::<usize>().unwrap());
+
+        let size = chunk_parts.next().unwrap();
+
+        disk.push(File { id, size });
+        chunk_parts.next().map(|space| disk.push(Empty { space }));
+    });
+
+    let mut current_id = *disk
+        .iter()
+        .rev()
+        .filter_map(|f| match f {
+            File { id, size: _ } => Some(id),
+            _ => None,
+        })
+        .nth(0)
+        .unwrap();
+
+    loop {
+        if current_id == 0 {
+            break;
+        }
+
+        let (file_idx, file_id, file_size) = disk
+            .iter()
+            .enumerate()
+            .filter_map(|(i, b)| match b {
+                File { id, size } => {
+                    if *id == current_id {
+                        Some((i, *id, *size))
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            })
+            .nth(0)
+            .unwrap();
+
+        let found_space = disk
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| *i < file_idx)
+            .filter_map(|(i, block)| match block {
+                Empty { space } => {
+                    if *space >= file_size {
+                        Some((i, space))
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            })
+            .nth(0);
+
+        if let Some((space_idx, space)) = found_space {
+            let remaining_space = space - file_size;
+
+            disk[file_idx] = Empty { space: file_size };
+            disk[space_idx] = File {
+                id: file_id,
+                size: file_size,
+            };
+
+            if remaining_space > 0 {
+                let mut replaced = false;
+                if space_idx > 0 {
+                    match disk[space_idx - 1] {
+                        Empty { ref mut space } => {
+                            *space += remaining_space;
+                            replaced = true;
+                        }
+                        _ => (),
+                    }
+                }
+                if !replaced && space_idx < disk.len() - 1 {
+                    match disk[space_idx + 1] {
+                        Empty { ref mut space } => {
+                            *space += remaining_space;
+                            replaced = true;
+                        }
+                        _ => (),
+                    }
+                }
+                if !replaced {
+                    disk.insert(
+                        space_idx + 1,
+                        Empty {
+                            space: remaining_space,
+                        },
+                    );
+                }
+            }
+        }
+
+        if false {
+            let debug = disk
+                .iter()
+                .flat_map(|block| match block {
+                    File { id, size } => [Some(*id)].repeat(*size),
+                    Empty { space } => [None].repeat(*space),
+                })
+                .map(|block| match block {
+                    Some(id) => id.to_string(),
+                    None => ".".to_string(),
+                })
+                .collect::<Vec<_>>()
+                .join("");
+            println!("after id {}: {}", current_id, debug);
+        }
+
+        current_id -= 1;
+    }
+
+    // println!("{:#?}", disk);
+
+    let blocks = disk
+        .iter()
+        .flat_map(|block| match block {
+            File { id, size } => [Some(*id)].repeat(*size),
+            Empty { space } => [None].repeat(*space),
+        })
+        .collect::<Vec<Option<usize>>>();
+
+    // println!("{:?}", blocks);
+
+    let checksum = blocks
+        .iter()
+        .enumerate()
+        .fold(0, |acc, (i, id)| acc + i * id.unwrap_or(0));
+
+    Some(checksum as u64)
+}
+
+pub fn crazy(input: &str) -> Option<u64> {
+    let mut files = expand_fs(input);
+
+    let mut processed = HashSet::new();
+    let mut i = files.len() - 1;
+    loop {
+        let len = files.len();
+
+        let mut apply = None;
+
+        {
+            let current_file_size = files[i].size;
+            if processed.contains(&files[i].id) {
+                if i == 0 {
+                    break;
+                } else {
+                    i -= 1;
+                    continue;
+                }
+            }
+
+            processed.insert(files[i].id);
+
+            println!("Current file {} : {}", files[i].id, current_file_size);
+
+            for j in 0..i {
+                let space_after = &files[j].space_after;
+
+                match space_after {
+                    Some(FreeSpace::Empty { size }) => {
+                        println!("  free space {}: {}", files[j].id, size);
+                        if *size >= current_file_size {
+                            apply = Some(j);
+                            break;
+                        }
+                    }
+                    Some(FreeSpace::Packed {
+                        free_space,
+                        files: _,
+                    }) => {
+                        println!("  free space {}: {}", files[j].id, free_space);
+                        if *free_space >= current_file_size {
+                            apply = Some(j);
+                            break;
+                        }
+                    }
+                    None => (),
+                }
+            }
+
+            if let Some(j) = apply {
+                let last_file = files.remove(i);
+
+                {
+                    let other_file = &mut files[j];
+
+                    println!(
+                        "Applying insert of {} ({}) after {}",
+                        last_file.id, last_file.size, other_file.id
+                    );
+
+                    match &mut other_file.space_after {
+                        Some(FreeSpace::Empty { ref mut size }) => *size -= last_file.size,
+                        Some(FreeSpace::Packed {
+                            ref mut free_space,
+                            files: _,
+                        }) => *free_space -= last_file.size,
+                        None => (),
+                    }
+                }
+                if j > 0 {
+                    let prev_file = &mut files[j - 1];
+                    match &mut prev_file.space_after {
+                        Some(FreeSpace::Empty { ref mut size }) => *size += last_file.size,
+                        Some(FreeSpace::Packed {
+                            ref mut free_space,
+                            files: _,
+                        }) => *free_space += last_file.size,
+                        None => (),
+                    }
+                }
+                files.insert(j, last_file);
+            }
+        }
+
+        if len == 0 || i == 0 {
+            break;
+        }
+
+        i -= 1;
+    }
+
+    let blocks = files
+        .into_iter()
+        .map(|f| {
+            let mut blocks = [Some(f.id)].repeat(f.size);
+
+            match f.space_after {
+                Some(FreeSpace::Packed { free_space, files }) => {
+                    blocks.extend(files.into_iter().flat_map(|f| [Some(f.id)].repeat(f.size)));
+                    blocks.extend([None].repeat(free_space));
+                }
+                Some(FreeSpace::Empty { size }) => blocks.extend([None].repeat(size)),
+                None => (),
+            }
+
+            blocks
+        })
+        .flatten()
+        .collect::<Vec<Option<usize>>>();
+
+    println!("{:#?}", &blocks);
+
+    let checksum = blocks
+        .iter()
+        .enumerate()
+        .fold(0, |acc, (i, id)| acc + i * id.unwrap_or(0));
+
+    Some(checksum as u64)
 }
 
 #[cfg(test)]
@@ -182,6 +452,6 @@ mod tests {
     #[test]
     fn test_part_two() {
         let result = part_two(&advent_of_code::template::read_file("examples", DAY));
-        assert_eq!(result, None);
+        assert_eq!(result, Some(2858));
     }
 }
