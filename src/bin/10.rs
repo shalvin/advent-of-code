@@ -1,11 +1,8 @@
-use petgraph::{
-    prelude::*,
-    visit::{NodeRef, Walker},
-};
+use petgraph::{algo::all_simple_paths, prelude::*, visit::Walker};
 
 advent_of_code::solution!(10);
 
-pub fn part_one(input: &str) -> Option<u64> {
+fn graph_input(input: &str) -> StableDiGraph<u32, i32> {
     let mut graph: StableDiGraph<u32, i32> = StableDiGraph::new();
 
     let map = input
@@ -41,6 +38,12 @@ pub fn part_one(input: &str) -> Option<u64> {
         }
     }
 
+    graph
+}
+
+pub fn part_one(input: &str) -> Option<u64> {
+    let graph = graph_input(input);
+
     let trail_graph =
         graph.filter_map(|_, n| Some(n), |_, e| if *e == 1 { Some(*e) } else { None });
 
@@ -58,7 +61,23 @@ pub fn part_one(input: &str) -> Option<u64> {
 }
 
 pub fn part_two(input: &str) -> Option<u64> {
-    None
+    let graph = graph_input(input);
+
+    let trail_graph =
+        graph.filter_map(|_, n| Some(n), |_, e| if *e == 1 { Some(*e) } else { None });
+
+    let mut score = 0;
+    for starting_node in trail_graph.node_indices().filter(|n| *trail_graph[*n] == 0) {
+        let dfs = Dfs::new(&trail_graph, starting_node);
+        let end_nodes = dfs.iter(&trail_graph).filter(|n| *trail_graph[*n] == 9);
+
+        for end_node in end_nodes {
+            score += all_simple_paths::<Vec<_>, _>(&trail_graph, starting_node, end_node, 0, None)
+                .count();
+        }
+    }
+
+    Some(score as u64)
 }
 
 #[cfg(test)]
@@ -74,6 +93,6 @@ mod tests {
     #[test]
     fn test_part_two() {
         let result = part_two(&advent_of_code::template::read_file("examples", DAY));
-        assert_eq!(result, None);
+        assert_eq!(result, Some(81));
     }
 }
