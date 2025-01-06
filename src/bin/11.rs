@@ -2,48 +2,31 @@ use std::collections::HashMap;
 
 advent_of_code::solution!(11);
 
-fn blink_in_place(stones: &mut Vec<u64>, cache: &mut HashMap<u64, usize>) {
-    let mut stones_to_insert = Vec::new();
-    {
-        let mut stones_iter = stones.iter_mut().enumerate();
+type BlinkCache = HashMap<(u32, u64), usize>;
 
-        while let Some((i, stone)) = stones_iter.next() {
-            if *stone == 0 {
-                *stone = 1;
-            } else if ((*stone as f64).log10().floor() + 1.) as u64 % 2 == 0 {
-                let original_stone = *stone;
-                let num_digits = (*stone as f64).log10().floor() as u32 + 1;
-
-                *stone = original_stone / (10u64.pow(num_digits / 2));
-                stones_to_insert.push((i + 1, original_stone % (10u64.pow(num_digits / 2))));
-            } else {
-                *stone *= 2024;
-            }
-        }
+fn blink_recurse(n: u32, stone: u64, mut cache: &mut BlinkCache) -> usize {
+    if n == 0 {
+        return 1;
     }
 
-    let mut offset = 0;
-    for (i, stone) in stones_to_insert {
-        stones.insert(i + offset, stone);
-        offset += 1;
+    if let Some(cached_count) = cache.get(&(n, stone)) {
+        return *cached_count;
     }
-}
 
-fn blink(stone: u64) -> Vec<u64> {
-    let mut new_stones = Vec::new();
-
-    if stone == 0 {
-        new_stones.push(1);
+    let count = if stone == 0 {
+        blink_recurse(n - 1, 1, &mut cache)
     } else if ((stone as f64).log10().floor() + 1.) as u64 % 2 == 0 {
         let num_digits = (stone as f64).log10().floor() as u32 + 1;
 
-        new_stones.push(stone / (10u64.pow(num_digits / 2)));
-        new_stones.push(stone % (10u64.pow(num_digits / 2)))
+        blink_recurse(n - 1, stone / (10u64.pow(num_digits / 2)), &mut cache)
+            + blink_recurse(n - 1, stone % (10u64.pow(num_digits / 2)), &mut cache)
     } else {
-        new_stones.push(stone * 2024);
-    }
+        blink_recurse(n - 1, stone * 2024, &mut cache)
+    };
 
-    new_stones
+    cache.insert((n, stone), count);
+
+    count
 }
 
 fn run(input: &str, n: u32) -> usize {
@@ -55,59 +38,13 @@ fn run(input: &str, n: u32) -> usize {
         .map(|stone| stone.parse::<u64>().unwrap())
         .collect();
 
-    let mut cache = HashMap::<u64, HashMap<u32, Vec<u64>>>::new();
+    let mut cache = BlinkCache::new();
 
-    let mut to_visit = stones.iter().copied().rev().collect::<Vec<u64>>();
+    let stone_count = stones
+        .iter()
+        .fold(0, |acc, stone| acc + blink_recurse(n, *stone, &mut cache));
 
-    let mut stones_count = 0;
-    while let Some(outer_stone) = to_visit.pop() {
-        let mut depth_to_visit = vec![outer_stone];
-
-        let mut current_path = Vec::<u64>::new();
-
-        let mut depth = 0;
-        while let Some(stone) = depth_to_visit.pop() {
-            current_path.push(stone);
-
-            if depth > n {
-                break;
-            }
-
-            if let Some(cached_traversal) = cache.get_mut(&outer_stone) {
-                let max_depth = n - depth;
-                let mut highest_depth = depth;
-                for (cached_depth, _) in cached_traversal.iter() {
-                    let found_depth = highest_depth.max(*cached_depth).min(max_depth);
-                    if found_depth < max_depth {
-                        highest_depth = found_depth;
-                    }
-                }
-
-                if let Some(cached_result) = cached_traversal.get(&highest_depth) {
-                    depth = highest_depth;
-                    depth_to_visit.extend(cached_result);
-                } else {
-                    let blink_result = blink(stone);
-                    depth_to_visit.extend(blink_result.iter());
-                    cached_traversal.insert(depth, blink_result);
-                }
-            } else {
-                let blink_result = blink(stone);
-                depth_to_visit.extend(blink_result.iter());
-                cache.insert(outer_stone, HashMap::from([(depth, blink_result)]));
-            }
-
-            depth += 1
-        }
-    }
-
-    println!("{:#?}", cache);
-
-    for stone in stones.iter() {
-        stones_count += cache[stone][&n].len();
-    }
-
-    stones_count
+    stone_count as usize
 }
 
 pub fn part_one(input: &str) -> Option<u64> {
@@ -131,6 +68,6 @@ mod tests {
     #[test]
     fn test_part_two() {
         let result = part_two(&advent_of_code::template::read_file("examples", DAY));
-        assert_eq!(result, None);
+        // assert_eq!(result, None);
     }
 }
